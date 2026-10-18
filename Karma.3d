@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Operation Karma 3D: Battlegrounds (Puneet's Concept)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: 'Segoe UI', sans-serif; }
+  body { background: #000; color: #fff; overflow: hidden; touch-action: none; }
+  #game-container { width: 100vw; height: 100vh; position: relative; }
+
+  /* Top HUD */
+  #hud { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; pointer-events: none; z-index: 10; }
+  .hud-card { background: rgba(15, 23, 42, 0.82); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.15); padding: 10px 14px; border-radius: 10px; font-size: 13px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+  .squad-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 5px; }
+  .hp-bar { width: 70px; height: 7px; background: #334155; border-radius: 4px; overflow: hidden; }
+  .hp-fill { height: 100%; background: #22c55e; transition: width 0.2s; }
+
+  /* Center Crosshair */
+  #crosshair { position: fixed; top: 45%; left: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; pointer-events: none; z-index: 5; opacity: 0.7; }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #fbbf24; }
+  #crosshair::before { top: 11px; left: 0; width: 24px; height: 2px; }
+  #crosshair::after { top: 0; left: 11px; width: 2px; height: 24px; }
+
+  /* Modals */
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+  .modal-card { background: linear-gradient(145deg, #1e293b, #0f172a); border: 2px solid #f59e0b; border-radius: 14px; max-width: 520px; width: 100%; padding: 22px; text-align: center; box-shadow: 0 0 40px rgba(245, 158, 11, 0.35); }
+  .modal-card h2 { color: #f59e0b; margin-bottom: 10px; font-size: 22px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .modal-card p { color: #cbd5e1; font-size: 14px; margin-bottom: 14px; line-height: 1.5; }
+  .btn-stack { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  button { background: #f59e0b; color: #000; border: none; padding: 13px; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; transition: 0.2s; pointer-events: auto; }
+  button:hover { background: #fbbf24; transform: translateY(-1px); }
+  button.sec { background: #334155; color: #fff; }
+  button.danger { background: #ef4444; color: #fff; }
+
+  /* Mobile Controls */
+  #controls { position: fixed; bottom: 24px; left: 24px; right: 24px; display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none; z-index: 20; }
+  #joy-zone { width: 120px; height: 120px; background: rgba(255,255,255,0.08); border: 2px solid rgba(255,255,255,0.25); border-radius: 50%; position: relative; pointer-events: auto; }
+  #joy-knob { width: 48px; height: 48px; background: rgba(245, 158, 11, 0.85); border-radius: 50%; position: absolute; top: 34px; left: 34px; box-shadow: 0 0 12px rgba(245,158,11,0.6); }
+  .action-group { display: flex; gap: 14px; pointer-events: auto; align-items: center; }
+  .round-btn { width: 76px; height: 76px; border-radius: 50%; font-weight: bold; font-size: 13px; display: flex; align-items: center; justify-content: center; text-align: center; box-shadow: 0 6px 16px rgba(0,0,0,0.6); }
+  #fire-btn { background: radial-gradient(circle, #ef4444, #b91c1c); color: #fff; border: 3px solid #fca5a5; }
+  #fire-btn:active { transform: scale(0.92); }
+  #revive-btn { background: radial-gradient(circle, #22c55e, #15803d); color: #fff; border: 3px solid #86efac; display: none; width: 68px; height: 68px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div id="game-container"></div>
+<div id="crosshair"></div>
+
+<!-- Top HUD -->
+<div id="hud">
+  <div class="hud-card">
+    <div style="color:#f59e0b; font-weight:bold; margin-bottom:4px;">🛡️ SQUAD (Trust: <span id="trust-ui">80</span>%)</div>
+    <div id="squad-ui"></div>
+  </div>
+  <div class="hud-card" style="text-align:right;">
+    <div>💰 Credits: <strong id="credits-ui" style="color:#fbbf24;">100</strong></div>
+    <div>🎯 Enemies Alive: <strong id="enemies-ui" style="color:#ef4444;">10</strong></div>
+    <div>🔵 3D Blue Zone: <span id="zone-ui">100%</span></div>
+    <div style="font-size:11px; color:#94a3b8; margin-top:2px;">Mission #<span id="mission-ui">1</span> (<span id="mode-ui">Squad</span>)</div>
+  </div>
+</div>
+
+<!-- Start Modal -->
+<div id="start-modal" class="modal">
+  <div class="modal-card">
+    <h2>🎮 OPERATION KARMA 3D</h2>
+    <p><strong>Puneet's 3D Third-Person Tactical Consequence Game</strong><br>
+    PUBG स्टाइल के इस 3D मैदान में आपके हर फैसले की कीमत है। क्या आप अपने साथियों को 50 Credits देकर बचाएंगे, या खुद के फायदे के लिए भागेंगे?</p>
+    <div class="btn-stack">
+      <button onclick="startMission('squad')">👥 4-Player 3D Squad Mode (Recommended)</button>
+      <button class="sec" onclick="startMission('solo')">👤 Solo 3D Survival Mode</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sacrifice Dilemma Modal -->
+<div id="dilemma-modal" class="modal" style="display:none;">
+  <div class="modal-card">
+    <h2>⚠️ CRITICAL 3D EXTRACTION DILEMMA!</h2>
+    <p>Blue Zone चारों तरफ से बंद हो रहा है! दुश्मनों ने मुख्य बंकर को घेर लिया है। टीम को सुरक्षित निकालने के लिए किसी एक को पीछे रुककर रेडियो टावर एक्टिवेट करना होगा!</p>
+    <div class="btn-stack">
+      <button class="danger" onclick="handleDilemma('sacrifice')">🛡️ खुद का बलिदान दें (Sacrifice Yourself - Save Squad + 10% Honor Rule)</button>
+      <button onclick="handleDilemma('risky')">⚡ पूरी स्क्वाड के साथ रिस्क लें (High-Risk Side Mission +35 Cr)</button>
+      <button class="sec" onclick="handleDilemma('selfish')">🏃 टीम को छोड़कर अकेले भागें (Selfish Loot +45 Cr, Hidden Penalty)</button>
+    </div>
+  </div>
+</div>
+
+<!-- End Mission & Routine Check Modal -->
+<div id="end-modal" class="modal" style="display:none;">
+  <div class="modal-card">
+    <h2 id="end-title">🏁 MISSION REPORT</h2>
+    <p id="end-desc"></p>
+    <div id="routine-report" style="background:#090d16; padding:12px; border-radius:8px; text-align:left; font-size:13px; border:1px solid #334155; margin-bottom:12px;"></div>
+    <div class="btn-stack">
+      <button onclick="startMission(currentMode)">▶️ अगला 3D मिशन खेलें (Consequences Carry Forward)</button>
+    </div>
+  </div>
+</div>
+
+<!-- Touch Controls -->
+<div id="controls">
+  <div id="joy-zone"><div id="joy-knob"></div></div>
+  <div class="action-group">
+    <button id="revive-btn" class="round-btn" onclick="reviveSquadMate()">➕ REVIVE<br>(50 Cr)</button>
+    <button id="fire-btn" class="round-btn">🔥 FIRE</button>
+  </div>
+</div>
+
+<script>
+// --- PERSISTENT ROUTINE CHECK PROFILE ---
+let profile = {
+  credits: 100,
+  trust: 80,
+  heroic: 0,
+  selfish: 0,
+  risky: 0,
+  hiddenPenalty: false,
+  mission: 1
+};
+
+let currentMode = 'squad';
+let gameState = 'menu';
+let dilemmaDone = false;
+
+// --- THREE.JS 3D SCENE SETUP ---
+const container = document.getElementById('game-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f172a);
+scene.fog = new THREE.FogExp2(0x0f172a, 0.008);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+container.appendChild(renderer.domElement);
+
+// Lights
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0xfffbeb, 0.9);
+dirLight.position.set(40, 80, 40);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+// Ground (PUBG Erangel Style Grid + Grass)
+const groundGeo = new THREE.PlaneGeometry(300, 300);
+const groundMat = new THREE.MeshLambertMaterial({ color: 0x1e2f23 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const gridHelper = new THREE.GridHelper(300, 60, 0x334155, 0x1e293b);
+gridHelper.position.y = 0.05;
+scene.add(gridHelper);
+
+// Shrinking 3D Blue Zone Cylinder
+let zoneRadius = 110;
+const zoneGeo = new THREE.CylinderGeometry(1, 1, 35, 48, 1, true);
+const zoneMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.22, side: THREE.DoubleSide });
+const blueZoneMesh = new THREE.Mesh(zoneGeo, zoneMat);
+blueZoneMesh.position.y = 17.5;
+scene.add(blueZoneMesh);
+
+// Game Objects Arrays
+let playerObj, squadObjs = [], enemyObjs = [], bulletObjs = [], crateObjs = [], envObjs = [];
+
+// Helper to create a 3D Soldier Character
+function createSoldierMesh(colorHex) {
+  const group = new THREE.Group();
+  // Body
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.8, 0.8), new THREE.MeshLambertMaterial({ color: colorHex }));
+  body.position.y = 1.4;
+  body.castShadow = true;
+  group.add(body);
+  // Head (Helmet)
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), new THREE.MeshLambertMaterial({ color: 0x1e293b }));
+  head.position.y = 2.7;
+  group.add(head);
+  // Gun Barrel
+  const gun = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 1.4), new THREE.MeshLambertMaterial({ color: 0xfbbf24 }));
+  gun.position.set(0.5, 1.6, 0.7);
+  group.add(gun);
+  return group;
+}
+
+// Build 3D Environment Cover (Trees, Rocks, Crates)
+function buildEnvironment() {
+  envObjs.forEach(o => scene.remove(o));
+  crateObjs.forEach(c => scene.remove(c.mesh));
+  envObjs = []; crateObjs = [];
+
+  for (let i = 0; i < 35; i++) {
+    let x = (Math.random() - 0.5) * 180;
+    let z = (Math.random() - 0.5) * 180;
+    if (Math.hypot(x, z) < 15) continue;
+    // Tree Trunk & Leaves
+    const tree = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 3), new THREE.MeshLambertMaterial({ color: 0x451a03 }));
+    trunk.position.y = 1.5;
+    const leaves = new THREE.Mesh(new THREE.ConeGeometry(2.5, 6, 8), new THREE.MeshLambertMaterial({ color: 0x14532d }));
+    leaves.position.y = 5;
+    tree.add(trunk, leaves);
+    tree.position.set(x, 0, z);
+    scene.add(tree);
+    envObjs.push(tree);
+  }
+
+  // Supply Loot Crates
+  for (let i = 0; i < 7; i++) {
+    let x = (Math.random() - 0.5) * 130;
+    let z = (Math.random() - 0.5) * 130;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), new THREE.MeshLambertMaterial({ color: 0xf59e0b }));
+    mesh.position.set(x, 0.8, z);
+    scene.add(mesh);
+    crateObjs.push({ mesh, x, z, taken: false });
+  }
+}
+
+function startMission(mode) {
+  currentMode = mode;
+  document.getElementById('start-modal').style.display = 'none';
+  document.getElementById('end-modal').style.display = 'none';
+  document.getElementById('mode-ui').innerText = mode === 'squad' ? '4-Player Squad' : 'Solo';
+  document.getElementById('mission-ui').innerText = profile.mission;
+
+  // Cleanup old meshes
+  if (playerObj) scene.remove(playerObj.mesh);
+  squadObjs.forEach(s => scene.remove(s.mesh));
+  enemyObjs.forEach(e => scene.remove(e.mesh));
+  bulletObjs.forEach(b => scene.remove(b.mesh));
+  squadObjs = []; enemyObjs = []; bulletObjs = [];
+
+  buildEnvironment();
+  zoneRadius = 110;
+  dilemmaDone = false;
+
+  // Player Setup
+  const pMesh = createSoldierMesh(0x22c55e);
+  scene.add(pMesh);
+  playerObj = { mesh: pMesh, x: 0, z: 0, rot: 0, hp: 100 };
+
+  // 4-Player Squad Setup
+  if (mode === 'squad') {
+    const names = ['Rahul', 'Amit', 'Rohit'];
+    names.forEach((name, idx) => {
+      const sMesh = createSoldierMesh(0x3b82f6);
+      let sx = (idx - 1) * 5;
+      let sz = -5;
+      sMesh.position.set(sx, 0, sz);
+      scene.add(sMesh);
+      squadObjs.push({
+        name, mesh: sMesh, x: sx, z: sz,
+        hp: profile.hiddenPenalty ? 65 : 100,
+        downed: false
+      });
+    });
+  }
+
+  // Spawn Enemies (More if hidden penalty is active!)
+  let totalEnemies = profile.hiddenPenalty ? 13 : 9;
+  for (let i = 0; i < totalEnemies; i++) {
+    let ang = Math.random() * Math.PI * 2;
+    let dist = 35 + Math.random() * 55;
+    let ex = Math.cos(ang) * dist;
+    let ez = Math.sin(ang) * dist;
+    const eMesh = createSoldierMesh(0xef4444);
+    eMesh.position.set(ex, 0, ez);
+    scene.add(eMesh);
+    enemyObjs.push({ mesh: eMesh, x: ex, z: ez, hp: 60, cooldown: 40 + Math.random() * 50 });
+  }
+
+  gameState = 'playing';
+  updateHUD();
+}
+
+// Shoot 3D Bullet
+function spawnBullet(x, z, angle, isEnemy) {
+  const bMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.25, 8, 8),
+    new THREE.MeshBasicMaterial({ color: isEnemy ? 0xf87171 : 0xfde047 })
+  );
+  bMesh.position.set(x, 1.6, z);
+  scene.add(bMesh);
+  bulletObjs.push({
+    mesh: bMesh, x, z,
+    vx: Math.sin(angle) * (isEnemy ? 0.65 : 1.2),
+    vz: Math.cos(angle) * (isEnemy ? 0.65 : 1.2),
+    isEnemy, life: 80
+  });
+}
+
+function firePlayerWeapon() {
+  if (gameState !== 'playing') return;
+  // Auto-lock nearest enemy within range for smooth mobile 3D combat
+  let nearest = null, minDist = 999;
+  enemyObjs.forEach(e => {
+    let d = Math.hypot(e.x - playerObj.x, e.z - playerObj.z);
+    if (d < minDist) { minDist = d; nearest = e; }
+  });
+  if (nearest && minDist < 55) {
+    playerObj.rot = Math.atan2(nearest.x - playerObj.x, nearest.z - playerObj.z);
+    playerObj.mesh.rotation.y = playerObj.rot;
+  }
+  spawnBullet(playerObj.x, playerObj.z, playerObj.rot, false);
+}
+
+document.getElementById('fire-btn').addEventListener('touchstart', e => { e.preventDefault(); firePlayerWeapon(); });
+document.getElementById('fire-btn').addEventListener('mousedown', e => { e.preventDefault(); firePlayerWeapon(); });
+
+// 50-Credit Revive System
+function reviveSquadMate() {
+  let mate = squadObjs.find(s => s.downed);
+  if (mate && profile.credits >= 50) {
+    profile.credits -= 50;
+    mate.downed = false;
+    mate.hp = 85;
+    mate.mesh.rotation.x = 0; // Stand back up in 3D!
+    profile.heroic++;
+    profile.trust = Math.min(100, profile.trust + 15);
+    updateHUD();
+  }
+}
+
+// Sacrifice Dilemma Handler
+function handleDilemma(choice) {
+  document.getElementById('dilemma-modal').style.display = 'none';
+  gameState = 'playing';
+
+  if (choice === 'sacrifice') {
+    profile.heroic += 2;
+    profile.trust = Math.min(100, profile.trust + 25);
+    profile.hiddenPenalty = false;
+    finishMission(true, 'sacrificed');
+  } else if (choice === 'risky') {
+    profile.risky++;
+    profile.credits += 35;
+    playerObj.hp = Math.max(25, playerObj.hp - 25);
+    squadObjs.forEach(s => { s.downed = false; s.hp = 100; s.mesh.rotation.x = 0; });
+  } else if (choice === 'selfish') {
+    profile.selfish += 2;
+    profile.credits += 45;
+    profile.trust = Math.max(0, profile.trust - 35);
+    profile.hiddenPenalty = true; // Next mission consequence!
+    if (squadObjs.length > 0) {
+      squadObjs[0].downed = true;
+      squadObjs[0].hp = 0;
+      squadObjs[0].mesh.rotation.x = -Math.PI / 2;
+    }
+  }
+}
+
+function finishMission(won, reason) {
+  gameState = 'ended';
+  document.getElementById('end-modal').style.display = 'flex';
+  const title = document.getElementById('end-title');
+  const desc = document.getElementById('end-desc');
+  const rep = document.getElementById('routine-report');
+
+  let base = 100, totalEarned = 0;
+
+  if (reason === 'sacrificed') {
+    title.innerText = "🎖️ HEROIC SACRIFICE (SQUAD SAVED)";
+    totalEarned = Math.round(base * 0.10) + 55; // 10% Sacrifice Rule + Honor Bonus
+    profile.credits += totalEarned;
+    desc.innerHTML = `आपने खुद की जान दांव पर लगाकर अपनी 3D स्क्वाड को सुरक्षित बाहर निकाल दिया!<br><strong>Sacrifice Rule (10% + Honor Bonus): +${totalEarned} Credits</strong>`;
+  } else if (won) {
+    title.innerText = "🏆 WINNER WINNER CHICKEN DINNER!";
+    let aliveCount = squadObjs.filter(s => !s.downed).length;
+    let teamBonus = currentMode === 'squad' ? Math.round((aliveCount / 3) * (base * 0.05) * 4) : 5;
+    totalEarned = Math.round(base * 0.95) + teamBonus;
+    profile.credits += totalEarned;
+    desc.innerHTML = `आपकी टीम ने मैदान जीत लिया!<br><strong>Reward Split:</strong> 95% Base (${Math.round(base*0.95)}) + 5% Squad Survival Link (+${teamBonus}) = <strong>+${totalEarned} Credits</strong>`;
+  } else {
+    title.innerText = "💀 ELIMINATED IN ACTION";
+    totalEarned = 10; // 10% Consolation
+    profile.credits += totalEarned;
+    desc.innerHTML = `आप मिशन में गिर गए। हिम्मत मत हारिए, अगले मिशन में अपनी रणनीति बदलें!<br><strong>10% Consolation Rule: +${totalEarned} Credits</strong>`;
+  }
+
+  let style = "Balanced Tactical Soldier (संतुलित रणनीतिकार)";
+  let lesson = "सही वक्त पर टीम और मिशन के बीच संतुलन बनाना ही जीत की चाबी है।";
+  if (profile.heroic > profile.selfish) {
+    style = "Selfless Guardian Leader (निःस्वार्थ लीडर)";
+    lesson = "Life Lesson: आपके बलिदान और मदद ने टीम का भरोसा 100% जीत लिया है। आपकी टीम आपके लिए जान देगी!";
+  } else if (profile.selfish > profile.heroic) {
+    style = "Self-Interest Survivor (स्वार्थी खिलाड़ी)";
+    lesson = "Life Lesson: स्वार्थ से तुरंत क्रेडिट्स तो मिल गए, लेकिन अगले मिशन में आपकी टीम आप पर भरोसा नहीं करेगी (Hidden Penalty Active)!";
+  }
+
+  rep.innerHTML = `
+    <div style="color:#f59e0b; font-weight:bold; margin-bottom:6px;">📊 ROUTINE CHECK & BEHAVIOR PROFILE:</div>
+    <div>🔹 <strong>Gaming Style:</strong> ${style}</div>
+    <div>🔹 <strong>Team Trust:</strong> ${profile.trust}%</div>
+    <div>🔹 <strong>Total Credits:</strong> ${profile.credits}</div>
+    <div>🔹 <strong>Future Consequence:</strong> ${profile.hiddenPenalty ? '<span style="color:#ef4444;">⚠️ ACTIVE (More Enemies & Weak Squad in Next Mission)</span>' : '<span style="color:#22c55e;">✅ Clear (High Morale)</span>'}</div>
+    <div style="margin-top:8px; color:#38bdf8;">💡 <em>${lesson}</em></div>
+  `;
+  profile.mission++;
+}
+
+function updateHUD() {
+  document.getElementById('credits-ui').innerText = profile.credits;
+  document.getElementById('trust-ui').innerText = profile.trust;
+  document.getElementById('enemies-ui').innerText = enemyObjs.length;
+  document.getElementById('zone-ui').innerText = Math.round((zoneRadius / 110) * 100) + '%';
+
+  let html = `<div class="squad-row"><span>⭐ You</span><div class="hp-bar"><div class="hp-fill" style="width:${playerObj.hp}%"></div></div></div>`;
+  squadObjs.forEach(s => {
+    let col = s.downed ? '#ef4444' : '#3b82f6';
+    html += `<div class="squad-row"><span>${s.downed ? '🆘' : '🛡️'} ${s.name}</span><div class="hp-bar"><div class="hp-fill" style="width:${s.hp}%; background:${col}"></div></div></div>`;
+  });
+  document.getElementById('squad-ui').innerHTML = html;
+
+  const revBtn = document.getElementById('revive-btn');
+  revBtn.style.display = (squadObjs.some(s => s.downed) && profile.credits >= 50) ? 'flex' : 'none';
+}
+
+// Controls Setup (Keyboard + Touch Joystick)
+let keys = {}, joy = { x: 0, y: 0 };
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.code === 'Space') firePlayerWeapon();
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+const joyZone = document.getElementById('joy-zone');
+const joyKnob = document.getElementById('joy-knob');
+joyZone.addEventListener('touchmove', e => {
+  e.preventDefault();
+  let t = e.touches[0];
+  let r = joyZone.getBoundingClientRect();
+  let dx = t.clientX - (r.left + 60);
+  let dy = t.clientY - (r.top + 60);
+  let d = Math.min(42, Math.hypot(dx, dy));
+  let a = Math.atan2(dy, dx);
+  joy.x = (Math.cos(a) * d) / 42;
+  joy.y = (Math.sin(a) * d) / 42;
+  joyKnob.style.transform = `translate(${Math.cos(a)*d}px, ${Math.sin(a)*d}px)`;
+});
+joyZone.addEventListener('touchend', () => {
+  joy.x = 0; joy.y = 0;
+  joyKnob.style.transform = `translate(0px,0px)`;
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.inn
